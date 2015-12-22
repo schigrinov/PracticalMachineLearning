@@ -125,7 +125,7 @@ answers
 
 Write the answers to files:
 ```{r}
-
+setwd("~/Sergey/Coursera/DataScience/Mashine learning/PeerAssessment/Submission")
 pml_write_files = function(x){
   n = length(x)
   for(i in 1:n){
