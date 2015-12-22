@@ -1,0 +1,139 @@
+---
+title: "Machine Learning Assesment"
+author: "Sergey Chigrinov"
+date: "December 21, 2015"
+output: html_document
+---
+
+In this work we will try to predict activity quality from activity monitors. For the analysis we'll use the Weight Lifting Exercise Dataset, from the following paper:
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+```{r setup}
+#knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, fig.path='Figs/')
+set.seed(1)
+```
+
+```{r Libraries}
+setwd("~/Sergey/Coursera/DataScience/Mashine learning/PeerAssessment")
+library(tree)
+library(caret)
+library(randomForest)
+```
+```{r eval=FALSE, include=FALSE}
+if (!file.exists("pml-training.csv")) { download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+   destfile="./pml-training.csv")
+   trainData <- read.csv("pml-training.csv",na.strings = c("NA", ""))   }
+if (!file.exists("pml-testing.csv")){ download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+   destfile="./pml-testing.csv")  } 
+```
+```{r Load Data}
+   trainData <- read.csv("pml-training.csv",na.strings=c("", "NA", "NULL"))  
+   validationData <- read.csv("pml-testing.csv",na.strings=c("", "NA", "NULL"))
+```
+
+##Preprocessing
+
+```{r Preprocess}
+dim(trainData)
+```
+There are 19622 obs. of  160 variables. A lot of values of some variables are missing, and there are some unnecessary columns, so we need to clean our data.
+```{r }
+goodvar <- sapply(trainData, function(x) {sum(is.na(x))})==0
+trainData <- trainData[,goodvar]
+trainData <- trainData[, -1:-6]
+dim(trainData)
+```
+The variable we need to predict is train$classe.
+```{r}
+levels(trainData$classe)
+```
+The "classe" variable has 5 levels.
+
+To perform cross-validation testing we need to split the initial data set into training and testing sets.
+
+```{r}
+inTrain <- createDataPartition(trainData$classe,p=0.75, list=FALSE)
+training <- trainData[inTrain,]
+testing <- trainData[-inTrain,]
+```
+
+
+```{r Principal component analysis, eval=FALSE, include=FALSE}
+#We'll try to reduce number of dimensions by applying Principal component analysis.
+#doesn't work well
+ind <- which(names(training)=="classe")
+comp <- preProcess(training[, -ind], method = "pca", thresh = 0.99)
+trainPC <- predict(comp, training[, -ind])
+testPC <- predict(comp, testing[, -ind])
+fitPC=tree(training$classe~.,data=trainPC)
+validPC <- predict(comp, testPC)
+dim(trainPC)
+```
+
+##Model fitting
+
+Since the objective is classification, we'll try to use Classification Tree and Random Forest algorythms.
+For the classification we'll use "tree" package - seems like it produces better results that "caret" package, and works faster. It could be because of some defaults or due to implementation.
+
+Classification tree:
+```{r Classification Tree}
+fitTree <- tree(classe ~ ., data=training)
+testPredTree=predict(fitTree,training, type = "class")
+trainConfusion <- confusionMatrix(testPredTree, training$classe)
+testPredTree=predict(fitTree,testing, type = "class")
+testConfusion <- confusionMatrix(testPredTree, testing$classe)
+trainConfusion$overall
+accTree <- testConfusion$overall[1]
+testConfusion$overall
+plot(fitTree)
+text(fitTree,pretty=0, cex =.6)
+testConfusion$table
+```
+
+We have ```r round((1-accTree)*100,2)```% of incorrect results for test set for the Classification Tree.
+Our out of sample error is not satisfactory.
+
+We'll try to improve the result by using Random Forest algorythm.
+Let's grow 100 trees for our random forest.
+Randon forest:
+```{r Random forest}
+#by default ntree=500, but for our task it should be enough to use ntree=100
+fitForest=randomForest(classe~.,data=training,ntree=100)
+```
+
+Variable Importance (first 20 var.)
+```{r}
+varImpPlot(fitForest, n.var=20)
+testPredForest=predict(fitForest,training, type = "class")
+trainConfusion <- confusionMatrix(testPredForest, training$classe)
+testPredForest=predict(fitForest,testing, type = "class")
+testConfusion <- confusionMatrix(testPredForest, testing$classe)
+trainConfusion$overall
+accForest <- testConfusion$overall[1]
+testConfusion$overall
+testConfusion$table
+```
+The accuracy of the algorythm on the test set is `r accForest*100`% - much better than the result of the classification tree. 
+
+##Final model and result
+```{r}
+finalFitForest=randomForest(classe~.,data=trainData,ntree=100)
+answers <- predict(finalFitForest,validationData, type = "class")
+answers
+```
+
+Write the answers to files:
+```{r}
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
+
